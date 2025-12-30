@@ -43,7 +43,7 @@ def calculate_penalty(amount, due_date, pay_date):
     total_due = amount
     penalty = 0.0
     for _ in range(months_late):
-        month_penalty = total_due * 0.10  # 10% of current total
+        month_penalty = total_due * 0.10
         penalty += month_penalty
         total_due += month_penalty
 
@@ -61,6 +61,12 @@ def normalize_date_columns(df):
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce")
     return df
+
+def display_with_index(df):
+    """Return a copy of df with 1-based index for display"""
+    df_display = df.copy()
+    df_display.index = range(1, len(df_display) + 1)
+    return df_display
 
 # ---------------- SIDEBAR: ADD SINGLE LOAN ----------------
 st.sidebar.header("Add New Loan")
@@ -89,10 +95,7 @@ if st.sidebar.button("Save Loan"):
             "total_due": loan_amount
         }
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-
-        # Remove exact duplicates
         df = df.drop_duplicates(subset=["full_name", "phone_number", "loan_amount", "disbursed_date"], keep="last")
-
         df = normalize_date_columns(df)
         df.to_csv(DATA_FILE, index=False)
         st.sidebar.success("Loan saved successfully!")
@@ -119,10 +122,8 @@ if uploaded_file:
         upload_df["penalty_amount"] = 0.0
         upload_df["total_due"] = upload_df["loan_amount"]
 
-        # Concatenate and remove duplicates
         df = pd.concat([df, upload_df], ignore_index=True)
         df = df.drop_duplicates(subset=["full_name", "phone_number", "loan_amount", "disbursed_date"], keep="last")
-
         df = normalize_date_columns(df)
         df.to_csv(DATA_FILE, index=False)
         st.success("Loan data uploaded successfully!")
@@ -141,7 +142,7 @@ df.to_csv(DATA_FILE, index=False)
 
 # ---------------- DISPLAY ALL LOANS ----------------
 st.subheader("All Loans")
-st.dataframe(df.reset_index(drop=True), use_container_width=True)  # display consecutive row numbers
+st.dataframe(display_with_index(df), use_container_width=True)
 
 # ---------------- MARK LOAN AS RETURNED ----------------
 st.subheader("Mark Loan as Returned")
@@ -178,4 +179,4 @@ else:
 # ---------------- OVERDUE LOANS ----------------
 st.subheader("Overdue Loans")
 overdue_df = df[(df["returned"] == False) & (pd.to_datetime(df["due_date"]) < pd.to_datetime(today))]
-st.dataframe(overdue_df.reset_index(drop=True), use_container_width=True)
+st.dataframe(display_with_index(overdue_df), use_container_width=True)
