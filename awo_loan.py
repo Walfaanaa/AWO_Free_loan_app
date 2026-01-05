@@ -9,7 +9,7 @@ import os
 st.set_page_config(page_title="AWO Loan App", layout="wide")
 st.title("AWO Interest-Free Loan Management App")
 
-GITHUB_CSV_URL = "https://raw.githubusercontent.com/Walfaanaa/AWO_Free_loan_app/main/awo_loans.csv"
+GITHUB_CSV_URL = "https://raw.githubusercontent.com/Walfaanaa/AWO_Free_loan_app/main/loan_file.xlsx"
 LOCAL_FILE = "awo_loans_local.csv"
 
 # ---------------- LOAD DATA ----------------
@@ -186,3 +186,4 @@ overdue_df = df[
 ]
 
 st.dataframe(display_with_index(overdue_df), use_container_width=True)
+
