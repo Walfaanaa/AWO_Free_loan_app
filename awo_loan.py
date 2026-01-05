@@ -1,82 +1,56 @@
 import streamlit as st
 import pandas as pd
+import os
 
-# ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="AWO Loan Excel Viewer", layout="wide")
-st.title("AWO Loan Data – GitHub Excel Viewer")
+# ---------------- CONFIG ----------------
+st.set_page_config(page_title="AWO Loan App (Persistent)", layout="wide")
+st.title("AWO Loan Data – Persistent Storage")
 
-# ---------------- GITHUB RAW EXCEL ----------------
-EXCEL_URL = "https://raw.githubusercontent.com/Walfaanaa/AWO_Free_loan_app/main/loan_file.xlsx"
-
-# ---------------- LOAD EXCEL SAFELY ----------------
-@st.cache_data
-def load_excel_safe():
-    try:
-        # Load ALL sheets
-        xls = pd.ExcelFile(EXCEL_URL, engine="openpyxl")
-        sheets = xls.sheet_names
-
-        return xls, sheets
-
-    except Exception as e:
-        st.error(f"Failed to open Excel file: {e}")
-        return None, []
-
-xls, sheet_names = load_excel_safe()
-
-# ---------------- SHEET SELECTION ----------------
-if not sheet_names:
-    st.stop()
-
-sheet = st.selectbox("Select Excel Sheet", sheet_names)
-
-# ---------------- LOAD RAW DATA (NO HEADERS) ----------------
-raw_df = pd.read_excel(
-    EXCEL_URL,
-    sheet_name=sheet,
-    header=None,
-    engine="openpyxl"
+GITHUB_EXCEL_URL = (
+    "https://raw.githubusercontent.com/"
+    "Walfaanaa/AWO_Free_loan_app/main/loan_file.xlsx"
 )
 
-st.subheader("🔍 Raw Excel View (Debug)")
-st.dataframe(raw_df, use_container_width=True)
+PERSISTENT_FILE = "awo_loans_persistent.csv"
 
-# ---------------- FIND REAL HEADER ROW ----------------
-header_row = None
-for i in range(min(10, len(raw_df))):
-    non_empty = raw_df.iloc[i].notna().sum()
-    if non_empty >= 3:
-        header_row = i
-        break
+# ---------------- LOAD DATA ----------------
+def load_data():
+    # ✅ If persistent file exists → ALWAYS use it
+    if os.path.exists(PERSISTENT_FILE):
+        df = pd.read_csv(
+            PERSISTENT_FILE,
+            parse_dates=["disbursed_date", "due_date", "return_date"]
+        )
+        return df
 
-if header_row is None:
-    st.error("Could not detect header row automatically.")
-    st.stop()
+    # 🔁 First run only → load from GitHub
+    df = pd.read_excel(
+        GITHUB_EXCEL_URL,
+        engine="openpyxl"
+    )
 
-# ---------------- RELOAD WITH REAL HEADER ----------------
-df = pd.read_excel(
-    EXCEL_URL,
-    sheet_name=sheet,
-    header=header_row,
-    engine="openpyxl"
-)
+    # Normalize dates
+    for col in ["disbursed_date", "due_date", "return_date"]:
+        if col in df.columns:
+            df[col] = pd.to_datetime(df[col], errors="coerce")
 
-# Drop fully empty columns
-df = df.dropna(axis=1, how="all")
+    # 🔒 SAVE ONCE → NEVER LOST
+    df.to_csv(PERSISTENT_FILE, index=False)
+    return df
 
-# Fix index
-df.index = range(1, len(df) + 1)
+df = load_data()
 
-# ---------------- DISPLAY CLEAN DATA ----------------
-st.subheader("✅ Cleaned Loan Data")
-st.success(f"Header detected at row {header_row + 1}")
-st.dataframe(df, use_container_width=True)
+# ---------------- DISPLAY ----------------
+df_display = df.copy()
+df_display.index = range(1, len(df_display) + 1)
 
-# ---------------- COLUMN INFO ----------------
-with st.expander("📋 Column Names"):
-    st.write(list(df.columns))
+st.success("✅ Data is now persistent and will NEVER disappear")
+st.dataframe(df_display, use_container_width=True)
 
-# ---------------- REFRESH ----------------
-if st.button("🔄 Reload Latest Excel from GitHub"):
-    st.cache_data.clear()
+# ---------------- MANUAL RESET (OPTIONAL) ----------------
+st.divider()
+if st.button("⚠️ Reset data from GitHub (DANGEROUS)"):
+    if os.path.exists(PERSISTENT_FILE):
+        os.remove(PERSISTENT_FILE)
+    st.warning("Persistent data deleted. Reloading from GitHub.")
     st.rerun()
