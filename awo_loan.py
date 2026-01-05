@@ -2,62 +2,81 @@ import streamlit as st
 import pandas as pd
 
 # ---------------- PAGE CONFIG ----------------
-st.set_page_config(
-    page_title="AWO Loan Data Viewer",
-    layout="wide"
-)
+st.set_page_config(page_title="AWO Loan Excel Viewer", layout="wide")
+st.title("AWO Loan Data – GitHub Excel Viewer")
 
-st.title("AWO Loan Data (Loaded from GitHub Excel)")
+# ---------------- GITHUB RAW EXCEL ----------------
+EXCEL_URL = "https://raw.githubusercontent.com/Walfaanaa/AWO_Free_loan_app/main/loan_file.xlsx"
 
-# ---------------- GITHUB RAW EXCEL LINK ----------------
-GITHUB_EXCEL_URL = (
-    "https://raw.githubusercontent.com/"
-    "Walfaanaa/AWO_Free_loan_app/main/loan_file.xlsx"
-)
-
-# ---------------- LOAD EXCEL FROM GITHUB ----------------
-@st.cache_data(show_spinner=True)
-def load_excel_from_github():
+# ---------------- LOAD EXCEL SAFELY ----------------
+@st.cache_data
+def load_excel_safe():
     try:
-        df = pd.read_excel(
-            GITHUB_EXCEL_URL,
-            engine="openpyxl",
-            sheet_name=0  # first sheet
-        )
+        # Load ALL sheets
+        xls = pd.ExcelFile(EXCEL_URL, engine="openpyxl")
+        sheets = xls.sheet_names
 
-        # Normalize date columns if they exist
-        for col in ["disbursed_date", "due_date", "return_date"]:
-            if col in df.columns:
-                df[col] = pd.to_datetime(df[col], errors="coerce")
-
-        return df
+        return xls, sheets
 
     except Exception as e:
-        st.error(f"❌ Failed to load Excel file: {e}")
-        return pd.DataFrame()
+        st.error(f"Failed to open Excel file: {e}")
+        return None, []
 
-# ---------------- LOAD DATA ----------------
-df = load_excel_from_github()
+xls, sheet_names = load_excel_safe()
 
-# ---------------- DISPLAY STATUS ----------------
-if df.empty:
-    st.warning("No data found in the Excel file.")
-else:
-    st.success(f"Loaded {len(df)} records from GitHub Excel")
+# ---------------- SHEET SELECTION ----------------
+if not sheet_names:
+    st.stop()
 
-    # Display column info (debug-friendly)
-    with st.expander("🔍 Column Information"):
-        st.write(df.dtypes)
+sheet = st.selectbox("Select Excel Sheet", sheet_names)
 
-    # Show data with 1-based index
-    df_display = df.copy()
-    df_display.index = range(1, len(df_display) + 1)
+# ---------------- LOAD RAW DATA (NO HEADERS) ----------------
+raw_df = pd.read_excel(
+    EXCEL_URL,
+    sheet_name=sheet,
+    header=None,
+    engine="openpyxl"
+)
 
-    st.subheader("Loan Records")
-    st.dataframe(df_display, use_container_width=True)
+st.subheader("🔍 Raw Excel View (Debug)")
+st.dataframe(raw_df, use_container_width=True)
 
-# ---------------- REFRESH BUTTON ----------------
-st.divider()
-if st.button("🔄 Reload Latest Data from GitHub"):
+# ---------------- FIND REAL HEADER ROW ----------------
+header_row = None
+for i in range(min(10, len(raw_df))):
+    non_empty = raw_df.iloc[i].notna().sum()
+    if non_empty >= 3:
+        header_row = i
+        break
+
+if header_row is None:
+    st.error("Could not detect header row automatically.")
+    st.stop()
+
+# ---------------- RELOAD WITH REAL HEADER ----------------
+df = pd.read_excel(
+    EXCEL_URL,
+    sheet_name=sheet,
+    header=header_row,
+    engine="openpyxl"
+)
+
+# Drop fully empty columns
+df = df.dropna(axis=1, how="all")
+
+# Fix index
+df.index = range(1, len(df) + 1)
+
+# ---------------- DISPLAY CLEAN DATA ----------------
+st.subheader("✅ Cleaned Loan Data")
+st.success(f"Header detected at row {header_row + 1}")
+st.dataframe(df, use_container_width=True)
+
+# ---------------- COLUMN INFO ----------------
+with st.expander("📋 Column Names"):
+    st.write(list(df.columns))
+
+# ---------------- REFRESH ----------------
+if st.button("🔄 Reload Latest Excel from GitHub"):
     st.cache_data.clear()
     st.rerun()
