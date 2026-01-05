@@ -19,18 +19,19 @@ PERSISTENT_FILE = "awo_loans_persistent.csv"
 
 # ---------------- LOAD DATA ----------------
 def load_data():
-    # ✅ If persistent file exists → ALWAYS use it
+
+    # ✅ USE CSV IF IT EXISTS
     if os.path.exists(PERSISTENT_FILE):
         df = pd.read_csv(PERSISTENT_FILE)
 
-        # ✅ Safely convert date columns (only if they exist)
+        # ✅ Convert date columns ONLY if they exist
         for col in ["disbursed_date", "due_date", "return_date"]:
             if col in df.columns:
                 df[col] = pd.to_datetime(df[col], errors="coerce")
 
         return df
 
-    # 🔁 First run only → load from GitHub Excel
+    # 🔁 FIRST RUN → LOAD FROM GITHUB
     df = pd.read_excel(
         GITHUB_EXCEL_URL,
         engine="openpyxl"
@@ -41,26 +42,26 @@ def load_data():
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce")
 
-    # 🔒 SAVE ONCE → survives reruns (until cloud reset)
+    # 🔒 Save locally
     df.to_csv(PERSISTENT_FILE, index=False)
     return df
 
 
-# ---------------- LOAD ----------------
+# ---------------- RUN ----------------
 df = load_data()
 
 # ---------------- DISPLAY ----------------
 df_display = df.copy()
 df_display.index = range(1, len(df_display) + 1)
 
-st.success("✅ Data loaded successfully (persistent while app is running)")
+st.success("✅ Data loaded successfully")
 st.dataframe(df_display, use_container_width=True)
 
-# ---------------- DEBUG (OPTIONAL) ----------------
-with st.expander("🔍 Show column names"):
+# ---------------- DEBUG ----------------
+with st.expander("🔍 Debug: show columns"):
     st.write(df.columns.tolist())
 
-# ---------------- MANUAL RESET ----------------
+# ---------------- RESET ----------------
 st.divider()
 st.subheader("Danger Zone")
 
