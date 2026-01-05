@@ -9,28 +9,45 @@ import os
 st.set_page_config(page_title="AWO Loan App", layout="wide")
 st.title("AWO Interest-Free Loan Management App")
 
-DATA_FILE = "awo_loans.csv"
+GITHUB_CSV_URL = "https://raw.githubusercontent.com/Walfaanaa/AWO_Free_loan_app/main/awo_loans.csv"
+LOCAL_FILE = "awo_loans_local.csv"
 
-# ---------------- LOAD OR CREATE DATA ----------------
-if os.path.exists(DATA_FILE):
-    df = pd.read_csv(DATA_FILE, parse_dates=["disbursed_date", "due_date", "return_date"])
+# ---------------- LOAD DATA ----------------
+@st.cache_data
+def load_from_github():
+    try:
+        df = pd.read_csv(
+            GITHUB_CSV_URL,
+            parse_dates=["disbursed_date", "due_date", "return_date"]
+        )
+        return df
+    except Exception:
+        return pd.DataFrame(columns=[
+            "full_name",
+            "phone_number",
+            "loan_amount",
+            "disbursed_date",
+            "due_date",
+            "returned",
+            "return_date",
+            "months_late",
+            "penalty_amount",
+            "total_due"
+        ])
+
+if os.path.exists(LOCAL_FILE):
+    df = pd.read_csv(
+        LOCAL_FILE,
+        parse_dates=["disbursed_date", "due_date", "return_date"]
+    )
 else:
-    df = pd.DataFrame(columns=[
-        "full_name",
-        "phone_number",
-        "loan_amount",
-        "disbursed_date",
-        "due_date",
-        "returned",
-        "return_date",
-        "months_late",
-        "penalty_amount",
-        "total_due"
-    ])
+    df = load_from_github()
 
 # ---------------- FUNCTIONS ----------------
 def calculate_penalty(amount, due_date, pay_date):
-    """Calculate cumulative penalty (10% per month, compounded each month late)"""
+    if pd.isna(due_date):
+        return 0, 0.0, amount
+
     due = pd.to_datetime(due_date)
     pay = pd.to_datetime(pay_date)
 
@@ -50,26 +67,23 @@ def calculate_penalty(amount, due_date, pay_date):
     return months_late, penalty, total_due
 
 def has_active_loan(phone, data):
-    """Check if phone has an active loan"""
     active = data[data["returned"] == False]
     return phone in active["phone_number"].astype(str).values
 
-def normalize_date_columns(df):
-    """Fix mixed date types for Streamlit dataframe"""
-    date_cols = ["disbursed_date", "due_date", "return_date"]
-    for col in date_cols:
+def normalize_dates(df):
+    for col in ["disbursed_date", "due_date", "return_date"]:
         if col in df.columns:
             df[col] = pd.to_datetime(df[col], errors="coerce")
     return df
 
 def display_with_index(df):
-    """Return a copy of df with 1-based index for display"""
-    df_display = df.copy()
-    df_display.index = range(1, len(df_display) + 1)
-    return df_display
+    df = df.copy()
+    df.index = range(1, len(df) + 1)
+    return df
 
-# ---------------- SIDEBAR: ADD SINGLE LOAN ----------------
+# ---------------- ADD NEW LOAN ----------------
 st.sidebar.header("Add New Loan")
+
 full_name = st.sidebar.text_input("Borrower Full Name")
 phone_number = st.sidebar.text_input("Phone Number")
 loan_amount = st.sidebar.number_input("Loan Amount", min_value=0.0, step=100.0)
@@ -82,6 +96,7 @@ if st.sidebar.button("Save Loan"):
         st.sidebar.error("This phone number already has an active loan.")
     else:
         due_date = disbursed_date + relativedelta(months=10)
+
         new_row = {
             "full_name": full_name,
             "phone_number": phone_number,
@@ -94,51 +109,33 @@ if st.sidebar.button("Save Loan"):
             "penalty_amount": 0.0,
             "total_due": loan_amount
         }
+
         df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-        df = df.drop_duplicates(subset=["full_name", "phone_number", "loan_amount", "disbursed_date"], keep="last")
-        df = normalize_date_columns(df)
-        df.to_csv(DATA_FILE, index=False)
+        df = df.drop_duplicates(
+            subset=["full_name", "phone_number", "loan_amount", "disbursed_date"],
+            keep="last"
+        )
+
+        df = normalize_dates(df)
+        df.to_csv(LOCAL_FILE, index=False)
         st.sidebar.success("Loan saved successfully!")
-
-# ---------------- SIDEBAR: UPLOAD LOANS ----------------
-st.sidebar.header("Upload Loans (CSV / Excel)")
-uploaded_file = st.sidebar.file_uploader("Upload File", type=["csv", "xlsx"])
-
-if uploaded_file:
-    if uploaded_file.name.endswith(".csv"):
-        upload_df = pd.read_csv(uploaded_file)
-    else:
-        upload_df = pd.read_excel(uploaded_file)
-
-    required_cols = {"full_name", "phone_number", "loan_amount", "disbursed_date"}
-    if not required_cols.issubset(upload_df.columns):
-        st.error("File must contain: full_name, phone_number, loan_amount, disbursed_date")
-    else:
-        upload_df["disbursed_date"] = pd.to_datetime(upload_df["disbursed_date"])
-        upload_df["due_date"] = upload_df["disbursed_date"] + pd.DateOffset(months=10)
-        upload_df["returned"] = False
-        upload_df["return_date"] = pd.NaT
-        upload_df["months_late"] = 0
-        upload_df["penalty_amount"] = 0.0
-        upload_df["total_due"] = upload_df["loan_amount"]
-
-        df = pd.concat([df, upload_df], ignore_index=True)
-        df = df.drop_duplicates(subset=["full_name", "phone_number", "loan_amount", "disbursed_date"], keep="last")
-        df = normalize_date_columns(df)
-        df.to_csv(DATA_FILE, index=False)
-        st.success("Loan data uploaded successfully!")
 
 # ---------------- UPDATE PENALTIES ----------------
 today = date.today()
+
 for i, row in df.iterrows():
     if not row["returned"]:
-        m, p, t = calculate_penalty(row["loan_amount"], row["due_date"], today)
+        m, p, t = calculate_penalty(
+            row["loan_amount"],
+            row["due_date"],
+            today
+        )
         df.loc[i, "months_late"] = m
         df.loc[i, "penalty_amount"] = p
         df.loc[i, "total_due"] = t
 
-df = normalize_date_columns(df)
-df.to_csv(DATA_FILE, index=False)
+df = normalize_dates(df)
+df.to_csv(LOCAL_FILE, index=False)
 
 # ---------------- DISPLAY ALL LOANS ----------------
 st.subheader("All Loans")
@@ -146,6 +143,7 @@ st.dataframe(display_with_index(df), use_container_width=True)
 
 # ---------------- MARK LOAN AS RETURNED ----------------
 st.subheader("Mark Loan as Returned")
+
 active_loans = df[df["returned"] == False]
 
 if not active_loans.empty:
@@ -170,13 +168,21 @@ if not active_loans.empty:
         df.loc[selected_index, "penalty_amount"] = p
         df.loc[selected_index, "total_due"] = t
 
-        df = normalize_date_columns(df)
-        df.to_csv(DATA_FILE, index=False)
-        st.success(f"Loan marked as returned! Months late: {m}, Penalty: {p:.2f}, Total due: {t:.2f}")
+        df = normalize_dates(df)
+        df.to_csv(LOCAL_FILE, index=False)
+        st.success(
+            f"Loan returned | Months late: {m} | "
+            f"Penalty: {p:.2f} | Total due: {t:.2f}"
+        )
 else:
     st.info("No active loans to return.")
 
 # ---------------- OVERDUE LOANS ----------------
 st.subheader("Overdue Loans")
-overdue_df = df[(df["returned"] == False) & (pd.to_datetime(df["due_date"]) < pd.to_datetime(today))]
+
+overdue_df = df[
+    (df["returned"] == False) &
+    (pd.to_datetime(df["due_date"]) < pd.to_datetime(today))
+]
+
 st.dataframe(display_with_index(overdue_df), use_container_width=True)
